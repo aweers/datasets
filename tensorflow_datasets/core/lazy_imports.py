@@ -84,6 +84,26 @@ class LazyImporter(object):
 
   @utils.classproperty
   @classmethod
+  def scipy_ndimage(cls):
+    return _try_import("scipy.ndimage")
+
+  @utils.classproperty
+  @classmethod
+  def skimage(cls):
+    return _try_import("skimage")
+
+  @utils.classproperty
+  @classmethod
+  def skimage_color(cls):
+    return _try_import("skimage.color")
+
+  @utils.classproperty
+  @classmethod
+  def skimage_filters(cls):
+    return _try_import("skimage.filters")
+
+  @utils.classproperty
+  @classmethod
   def os(cls):
     """For testing purposes only."""
     return _try_import("os")
