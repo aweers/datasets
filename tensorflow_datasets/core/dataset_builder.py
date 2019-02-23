@@ -46,6 +46,12 @@ FORCE_REDOWNLOAD = download.GenerateMode.FORCE_REDOWNLOAD
 REUSE_CACHE_IF_EXISTS = download.GenerateMode.REUSE_CACHE_IF_EXISTS
 REUSE_DATASET_IF_EXISTS = download.GenerateMode.REUSE_DATASET_IF_EXISTS
 
+GCS_HOSTED_MSG = """\
+Dataset {name} is hosted on GCS. Setting data_dir to {gcs_path}. If you find
+that read performance is slow, try copying the data locally with gsutil:
+gsutil -m cp -R {gcs_path} {local_data_dir_no_version}
+"""
+
 
 class BuilderConfig(object):
   """Base class for `DatasetBuilder` data configuration.
@@ -188,10 +194,30 @@ class DatasetBuilder(object):
 
     download_config = download_config or download.DownloadConfig()
     data_exists = tf.io.gfile.exists(self._data_dir)
-    if (data_exists and
-        download_config.download_mode == REUSE_DATASET_IF_EXISTS):
-      logging.info("Reusing dataset %s (%s)", self.name, self._data_dir)
-      return
+    if download_config.download_mode == REUSE_DATASET_IF_EXISTS:
+      # Data exists locally
+      if data_exists:
+        logging.info("Reusing dataset %s (%s)", self.name, self._data_dir)
+        return
+
+      # Data exists on our public GCS bucket
+      gcs_path = os.path.join(
+          constants.GCS_DATA_DIR, self._relative_data_dir(with_version=True))
+      if tf.io.gfile.exists(gcs_path):
+        # 2 options
+        if True:
+          # 1. Switch data_dir to be GCS
+          logging.info(GCS_HOSTED_MSG.format(  # pylint: disable=logging-format-interpolation
+              name=self.name,
+              gcs_path=gcs_path,
+              local_data_dir_no_version=os.path.split(self._data_dir)[0]))
+          self._data_dir = gcs_path
+        else:
+          # 2. Copy data to the data_dir
+          logging.info(
+              "Dataset hosted on GCS. Copying data locally. Set data_dir to %s "
+              "to avoid the local copy.", constants.GCS_DATA_DIR)
+          utils.copy_files(gcs_path, self._data_dir)
 
     dl_manager = self._make_download_manager(
         download_dir=download_dir,
@@ -337,14 +363,25 @@ class DatasetBuilder(object):
     else:
       return dataset
 
-  def _build_data_dir(self):
-    """Return the data directory for the current version."""
-    builder_data_dir = os.path.join(self._data_dir_root, self.name)
+  def _relative_data_dir(self, with_version=True):
+    """Relative path of this dataset in data_dir."""
+    builder_data_dir = self.name
     builder_config = self._builder_config
     if builder_config:
       builder_data_dir = os.path.join(builder_data_dir, builder_config.name)
+    if not with_version:
+      return builder_data_dir
+
     version = self._version
     version_data_dir = os.path.join(builder_data_dir, str(version))
+    return version_data_dir
+
+  def _build_data_dir(self):
+    """Return the data directory for the current version."""
+    builder_data_dir = os.path.join(
+        self._data_dir_root, self._relative_data_dir(with_version=False))
+    version_data_dir = os.path.join(
+        self._data_dir_root, self._relative_data_dir(with_version=True))
 
     def _other_versions_on_disk():
       """Returns previous versions on disk."""

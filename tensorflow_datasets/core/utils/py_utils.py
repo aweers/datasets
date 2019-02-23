@@ -29,6 +29,7 @@ import os
 import sys
 import uuid
 
+import concurrent.futures
 import six
 import tensorflow as tf
 from tensorflow_datasets.core import constants
@@ -275,3 +276,17 @@ def rgetattr(obj, attr, *args):
   def _getattr(obj, attr):
     return getattr(obj, attr, *args)
   return functools.reduce(_getattr, [obj] + attr.split("."))
+
+
+def _gfile_copy_from_tuple(src_dst_tuple):
+  tf.io.gfile.copy(*src_dst_tuple)
+
+
+def copy_files(src_dir, dst_dir):
+  """Copy files from src_dir to dst_dir. Top-level files only."""
+  filenames = next(tf.io.gfile.walk(src_dir))[2]
+  filepaths = [os.path.join(src_dir, f) for f in filenames]
+  dstpaths = [os.path.join(dst_dir, f) for f in filenames]
+  src_dst = zip(filepaths, dstpaths)
+  with concurrent.futures.ThreadPoolExecutor(max_workers=24) as tp:
+    tp.map(_gfile_copy_from_tuple, src_dst)
